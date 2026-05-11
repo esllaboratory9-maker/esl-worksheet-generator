@@ -87,7 +87,7 @@ export default function Step1({ state, onNext }: Props) {
         fileBase64: inputMode === "file" ? fileBase64 : undefined,
         fileType: inputMode === "file" ? fileType : undefined,
         fileName: inputMode === "file" ? fileName : undefined,
-        selectedAngle: null,
+        selectedAngles: [],
         vocabulary: [],
         worksheetMarkdown: "",
         exercises: [],
