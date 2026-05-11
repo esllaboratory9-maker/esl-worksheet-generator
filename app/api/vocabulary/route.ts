@@ -106,7 +106,8 @@ Return a JSON array only.
       model: "claude-sonnet-4-5",
       max_tokens: 2048,
       system: systemPrompt,
-      messages: [{ role: "user", content: userContent }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages: [{ role: "user", content: userContent as any }],
     });
 
     const text = message.content[0].type === "text" ? message.content[0].text : "";
