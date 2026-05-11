@@ -34,23 +34,29 @@ export default function Step1({ state, onNext }: Props) {
 
   const hasFile = !!(fileContent || fileBase64);
 
+  const MAX_FILE_MB = 3;
+
   const handleFileUpload = async (file: File) => {
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      setError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Please use a file under ${MAX_FILE_MB} MB.`);
+      return;
+    }
+    setError("");
     setFileName(file.name);
     setFileType(file.type);
     if (file.type === "application/pdf") {
-      // Store actual base64 data for the Anthropic document block
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string;
-        const base64 = dataUrl.split(",")[1]; // strip "data:application/pdf;base64,"
+        const base64 = dataUrl.split(",")[1];
         setFileBase64(base64);
-        setFileContent(""); // clear any previous text
+        setFileContent("");
       };
       reader.readAsDataURL(file);
     } else {
       const text = await file.text();
       setFileContent(text);
-      setFileBase64(""); // clear any previous base64
+      setFileBase64("");
     }
   };
 
@@ -230,7 +236,7 @@ export default function Step1({ state, onNext }: Props) {
                   <p style={{ color: "#374151", fontWeight: 500, fontSize: 14, marginBottom: 4 }}>
                     Drop your lesson plan here, or click to browse
                   </p>
-                  <p style={{ color: "#9CA3AF", fontSize: 12 }}>PDF, TXT, DOCX supported</p>
+                  <p style={{ color: "#9CA3AF", fontSize: 12 }}>PDF, TXT, DOCX · max 3 MB</p>
                 </div>
               )}
             </div>
