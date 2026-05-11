@@ -111,7 +111,7 @@ function markdownToParagraphs(markdown: string): Paragraph[] {
   return paragraphs;
 }
 
-export async function generateDocx(markdown: string): Promise<Buffer> {
+export async function generateDocx(markdown: string): Promise<Uint8Array> {
   const paragraphs = markdownToParagraphs(markdown);
 
   const doc = new Document({
@@ -138,5 +138,5 @@ export async function generateDocx(markdown: string): Promise<Buffer> {
   });
 
   const buffer = await Packer.toBuffer(doc);
-  return buffer;
+  return new Uint8Array(buffer);
 }

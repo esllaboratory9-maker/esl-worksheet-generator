@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     const content = version === "student" ? toStudentMarkdown(markdown) : markdown;
     const buffer = await generateDocx(content);
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
