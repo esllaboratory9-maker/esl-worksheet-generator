@@ -41,13 +41,28 @@ export default function Step1({ state, onNext }: Props) {
 
     try {
       if (file.type === "application/pdf") {
-        // Upload PDF directly to Anthropic via our API route — no base64, no size limits
+        if (file.size > 4 * 1024 * 1024) {
+          throw new Error(
+            `PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB — our server limit is 4 MB. ` +
+            `Please compress it first at smallpdf.com or ilovepdf.com and try again.`
+          );
+        }
         const form = new FormData();
         form.append("file", file);
         const res = await fetch("/api/upload-file", { method: "POST", body: form });
-        const data = await res.json();
+        let data: { fileId?: string; error?: string };
+        try {
+          data = await res.json();
+        } catch {
+          const text = await res.text().catch(() => "");
+          throw new Error(
+            text.includes("Entity Too Large") || text.includes("Request En")
+              ? "PDF is too large for our server (max 4 MB). Please compress it first at smallpdf.com."
+              : `Upload failed: ${text || res.statusText}`
+          );
+        }
         if (!res.ok) throw new Error(data.error || "Upload failed");
-        setFileId(data.fileId);
+        setFileId(data.fileId!);
         setFileContent("");
       } else {
         const text = await file.text();
