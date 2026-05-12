@@ -27,9 +27,8 @@ export interface AppState {
   inputMode: InputMode;
   topic: string;
   level: string;
-  fileContent?: string;   // plain text for .txt/.docx
-  fileBase64?: string;    // base64 for PDFs
-  fileType?: string;      // MIME type
+  fileContent?: string;   // plain text files
+  fileId?: string;        // Anthropic Files API ID for PDFs
   fileName?: string;
   selectedAngles: Angle[];
   vocabulary: VocabItem[];

@@ -7,41 +7,36 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { topic, level, angles, fileContent, fileBase64, fileType, fileName } = body as {
+    const { topic, level, angles, fileContent, fileId } = body as {
       topic: string;
       level: string;
       angles: Angle[];
       fileContent?: string;
-      fileBase64?: string;
-      fileType?: string;
-      fileName?: string;
+      fileId?: string;
     };
 
-    const isPdf = fileType === "application/pdf" && !!fileBase64;
     const isMixed = angles.length > 1;
     const isGrammar = angles.every((a) => a.vocabulary_type.toLowerCase().includes("grammar"));
-
     const anglesDescription = angles
       .map((a, i) => `${i + 1}. ${a.title} (${a.vocabulary_type}) — ${a.description}`)
       .join("\n");
-
     const itemsPerAngle = isMixed ? Math.ceil(12 / angles.length) : 12;
+    const hasSource = !!(fileContent || fileId);
 
-    const hasSource = isPdf || !!fileContent;
     const sourceExampleField = hasSource
-      ? `- source_example — the exact sentence or phrase from the lesson plan where this word appears. Copy it verbatim. If the word does not appear directly in the lesson plan, use an empty string "".`
+      ? `- source_example — the exact sentence or phrase from the lesson plan where this word appears. Copy it verbatim. If the word does not appear directly, use an empty string "".`
       : "";
     const sourceExampleJson = hasSource ? `, "source_example": "..."` : "";
 
     const systemPrompt = isGrammar
       ? `You are a grammar specialist for ESL Laboratory (esllaboratory.com).
 
-Generate a list of grammar rules for the following worksheet:
+Generate a list of grammar rules for:
 - Topic: ${topic}
 - Level: ${level}
 - Angles:\n${anglesDescription}
 
-Produce exactly 12 grammar items covering all the angles proportionally. Each item:
+Produce exactly 12 grammar items. Each item:
 - word — the grammar structure name
 - definition — clear explanation at the target level
 - example — one natural example sentence
@@ -52,63 +47,62 @@ Return a JSON array only.
 [{ "word": "...", "definition": "...", "example": "...", "part_of_speech": "grammar rule"${sourceExampleJson} }]`
       : `You are a vocabulary specialist for ESL Laboratory (esllaboratory.com).
 
-Generate a vocabulary list for the following worksheet:
+Generate a vocabulary list for:
 - Topic: ${topic}
 - Level: ${level}
-${isMixed ? `- Mixed angles (blend vocabulary from all):\n${anglesDescription}\n\nDistribute the 12 items proportionally across all angles — approximately ${itemsPerAngle} items per angle.` : `- Worksheet angle: ${angles[0]?.title}\n- What it covers: ${angles[0]?.description}`}
+${isMixed
+  ? `- Mixed angles:\n${anglesDescription}\n\nDistribute 12 items proportionally — ~${itemsPerAngle} per angle.`
+  : `- Angle: ${angles[0]?.title}\n- Covers: ${angles[0]?.description}`}
 
-Produce exactly 12 vocabulary items. Each item must include:
-- word — the vocabulary item as it will appear in the worksheet
-- definition — clear, accurate definition at the target level (do not use the word in its own definition)
+Produce exactly 12 vocabulary items:
+- word — the vocabulary item
+- definition — clear definition at the target level (don't use the word in its own definition)
 - example — one natural example sentence
-- part_of_speech — e.g. noun, verb, adjective, adverb, phrase, idiom
+- part_of_speech — e.g. noun, verb, adjective, phrase, idiom
 ${sourceExampleField}
 
 Level guidance:
-- A1–A2: very short definitions (5–8 words), simple sentences
-- A2–B1: short definitions (8–12 words), medium sentences
-- B1–B2: fuller definitions (10–15 words), natural sentences
-- B2–C1: precise definitions (12–18 words), authentic register
+- A1–A2: 5–8 word definitions, simple sentences
+- A2–B1: 8–12 word definitions, medium sentences
+- B1–B2: 10–15 word definitions, natural sentences
+- B2–C1: 12–18 word definitions, authentic register
 
-Rules:
-- Items must be genuinely useful and teachable
-- No near-synonyms — all items must be distinct
-- Sort alphabetically by word
+Rules: all items distinct, no near-synonyms, sort alphabetically.
 
 Return a JSON array only.
 [{ "word": "...", "definition": "...", "example": "...", "part_of_speech": "..."${sourceExampleJson} }]`;
 
-    type ContentBlock =
-      | { type: "text"; text: string }
-      | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
+    const userContent: unknown[] = [];
 
-    const userContent: ContentBlock[] = [];
-
-    if (isPdf) {
+    if (fileId) {
       userContent.push({
         type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: fileBase64! },
+        source: { type: "file", file_id: fileId },
+      });
+      userContent.push({
+        type: "text",
+        text: `Generate vocabulary for: ${angles.map((a) => a.title).join(" + ")}`,
+      });
+    } else if (fileContent) {
+      userContent.push({
+        type: "text",
+        text: `Generate vocabulary for: ${angles.map((a) => a.title).join(" + ")}\n\nLesson plan context:\n${fileContent.slice(0, 6000)}`,
+      });
+    } else {
+      userContent.push({
+        type: "text",
+        text: `Generate vocabulary for: ${angles.map((a) => a.title).join(" + ")}`,
       });
     }
 
-    const contextNote = isPdf
-      ? "(See attached lesson plan PDF for context.)"
-      : fileContent
-      ? `Lesson plan context:\n${fileContent.slice(0, 3000)}`
-      : "";
-
-    userContent.push({
-      type: "text",
-      text: `Generate vocabulary for: ${angles.map((a) => a.title).join(" + ")}${contextNote ? `\n\n${contextNote}` : ""}`,
-    });
+    const options = fileId ? { headers: { "anthropic-beta": "files-api-2025-04-14" } } : {};
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-5",
       max_tokens: 2048,
       system: systemPrompt,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       messages: [{ role: "user", content: userContent as any }],
-    });
+    }, options);
 
     const text = message.content[0].type === "text" ? message.content[0].text : "";
     const jsonMatch = text.match(/\[[\s\S]*\]/);

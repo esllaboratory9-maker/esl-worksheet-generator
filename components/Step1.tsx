@@ -24,57 +24,58 @@ export default function Step1({ state, onNext }: Props) {
   const [inputMode, setInputMode] = useState<InputMode>(state.inputMode ?? "topic");
   const [topic, setTopic] = useState(state.topic ?? "");
   const [level, setLevel] = useState(state.level ?? "");
-  const [fileContent, setFileContent] = useState(state.fileContent ?? "");   // plain text
-  const [fileBase64, setFileBase64] = useState(state.fileBase64 ?? "");      // PDF base64
-  const [fileType, setFileType] = useState(state.fileType ?? "");
+  const [fileContent, setFileContent] = useState(state.fileContent ?? "");
+  const [fileId, setFileId] = useState(state.fileId ?? "");
   const [fileName, setFileName] = useState(state.fileName ?? "");
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const hasFile = !!(fileContent || fileBase64);
-
-  const MAX_FILE_MB = 3;
+  const hasFile = !!(fileContent || fileId);
 
   const handleFileUpload = async (file: File) => {
-    if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      setError(`File is too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Please use a file under ${MAX_FILE_MB} MB.`);
-      return;
-    }
     setError("");
     setFileName(file.name);
-    setFileType(file.type);
-    if (file.type === "application/pdf") {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        const base64 = dataUrl.split(",")[1];
-        setFileBase64(base64);
+    setUploading(true);
+
+    try {
+      if (file.type === "application/pdf") {
+        // Upload PDF directly to Anthropic via our API route — no base64, no size limits
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/upload-file", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Upload failed");
+        setFileId(data.fileId);
         setFileContent("");
-      };
-      reader.readAsDataURL(file);
-    } else {
-      const text = await file.text();
-      setFileContent(text);
-      setFileBase64("");
+      } else {
+        const text = await file.text();
+        setFileContent(text);
+        setFileId("");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+      setFileName("");
+    } finally {
+      setUploading(false);
     }
   };
 
   const handleClear = () => {
     setFileContent("");
-    setFileBase64("");
-    setFileType("");
+    setFileId("");
     setFileName("");
+    setError("");
   };
 
   const handleGenerate = async () => {
     setError("");
     setLoading(true);
     try {
-      const body =
-        inputMode === "file"
-          ? { level, fileContent, fileBase64, fileType, fileName }
-          : { topic, level };
+      const body = inputMode === "file"
+        ? { level, fileContent: fileContent || undefined, fileId: fileId || undefined, fileName }
+        : { topic, level };
 
       const res = await fetch("/api/angles", {
         method: "POST",
@@ -90,8 +91,7 @@ export default function Step1({ state, onNext }: Props) {
         topic: inputMode === "topic" ? topic : fileName.replace(/\.[^.]+$/, ""),
         level,
         fileContent: inputMode === "file" ? fileContent : undefined,
-        fileBase64: inputMode === "file" ? fileBase64 : undefined,
-        fileType: inputMode === "file" ? fileType : undefined,
+        fileId: inputMode === "file" ? fileId : undefined,
         fileName: inputMode === "file" ? fileName : undefined,
         selectedAngles: [],
         vocabulary: [],
@@ -119,35 +119,16 @@ export default function Step1({ state, onNext }: Props) {
         </p>
       </div>
 
-      {/* Mode toggle */}
-      <div
-        style={{
-          display: "flex",
-          background: "#F3F4F6",
-          borderRadius: 10,
-          padding: 4,
-          marginBottom: 28,
-          gap: 4,
-        }}
-      >
+      <div style={{ display: "flex", background: "#F3F4F6", borderRadius: 10, padding: 4, marginBottom: 28, gap: 4 }}>
         {(["topic", "file"] as InputMode[]).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => setInputMode(mode)}
-            style={{
-              flex: 1,
-              padding: "8px 12px",
-              borderRadius: 7,
-              border: "none",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer",
-              background: inputMode === mode ? "#fff" : "transparent",
-              color: inputMode === mode ? "#111827" : "#6B7280",
-              boxShadow: inputMode === mode ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
-              transition: "all 0.15s",
-            }}
-          >
+          <button key={mode} onClick={() => setInputMode(mode)} style={{
+            flex: 1, padding: "8px 12px", borderRadius: 7, border: "none", fontSize: 14,
+            fontWeight: 500, cursor: "pointer",
+            background: inputMode === mode ? "#fff" : "transparent",
+            color: inputMode === mode ? "#111827" : "#6B7280",
+            boxShadow: inputMode === mode ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+            transition: "all 0.15s",
+          }}>
             {mode === "topic" ? "Enter a topic" : "Upload lesson plan"}
           </button>
         ))}
@@ -156,9 +137,7 @@ export default function Step1({ state, onNext }: Props) {
       <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
         {inputMode === "topic" ? (
           <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-              Topic
-            </label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Topic</label>
             <input
               className="input-field"
               type="text"
@@ -170,63 +149,36 @@ export default function Step1({ state, onNext }: Props) {
           </div>
         ) : (
           <div>
-            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>
-              Lesson plan file
-            </label>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 6 }}>Lesson plan file</label>
             <div
-              onClick={() => !hasFile && fileInputRef.current?.click()}
+              onClick={() => !hasFile && !uploading && fileInputRef.current?.click()}
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                const file = e.dataTransfer.files[0];
-                if (file) handleFileUpload(file);
-              }}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleFileUpload(f); }}
               style={{
-                border: "2px dashed",
-                borderColor: hasFile ? "#F06292" : "#E5E7EB",
-                borderRadius: 10,
-                padding: "32px 20px",
-                textAlign: "center",
-                cursor: hasFile ? "default" : "pointer",
-                background: hasFile ? "#FFF5F8" : "#FAFAFA",
-                transition: "all 0.15s",
+                border: "2px dashed", borderColor: hasFile ? "#F06292" : "#E5E7EB",
+                borderRadius: 10, padding: "32px 20px", textAlign: "center",
+                cursor: hasFile || uploading ? "default" : "pointer",
+                background: hasFile ? "#FFF5F8" : "#FAFAFA", transition: "all 0.15s",
               }}
             >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.txt,.docx,.doc"
+              <input ref={fileInputRef} type="file" accept=".pdf,.txt,.docx,.doc"
                 style={{ display: "none" }}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFileUpload(file);
-                }}
-              />
-              {hasFile ? (
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }} />
+
+              {uploading ? (
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                  <Spinner size={28} />
+                  <p style={{ color: "#6B7280", fontSize: 14 }}>Uploading file…</p>
+                </div>
+              ) : hasFile ? (
                 <div>
-                  <div style={{ fontSize: 28, marginBottom: 10 }}>
-                    {fileType === "application/pdf" ? "📄" : "📝"}
-                  </div>
-                  <p style={{ fontWeight: 700, color: "#111827", fontSize: 15, marginBottom: 6 }}>
-                    {fileName}
-                  </p>
+                  <div style={{ fontSize: 28, marginBottom: 10 }}>📄</div>
+                  <p style={{ fontWeight: 700, color: "#111827", fontSize: 15, marginBottom: 6 }}>{fileName}</p>
                   <p style={{ color: "#6B7280", fontSize: 13, marginBottom: 10 }}>
-                    {fileType === "application/pdf"
-                      ? "PDF uploaded — ready to analyse"
-                      : `${Math.round(fileContent.length / 1000)}k characters`}
+                    {fileId ? "PDF ready — full content will be analysed" : `${Math.round(fileContent.length / 1000)}k characters`}
                   </p>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleClear(); }}
-                    style={{
-                      background: "none",
-                      border: "1.5px solid #E5E7EB",
-                      borderRadius: 6,
-                      padding: "4px 14px",
-                      fontSize: 12,
-                      cursor: "pointer",
-                      color: "#6B7280",
-                    }}
-                  >
+                  <button onClick={(e) => { e.stopPropagation(); handleClear(); }}
+                    style={{ background: "none", border: "1.5px solid #E5E7EB", borderRadius: 6, padding: "4px 14px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>
                     Remove
                   </button>
                 </div>
@@ -236,7 +188,7 @@ export default function Step1({ state, onNext }: Props) {
                   <p style={{ color: "#374151", fontWeight: 500, fontSize: 14, marginBottom: 4 }}>
                     Drop your lesson plan here, or click to browse
                   </p>
-                  <p style={{ color: "#9CA3AF", fontSize: 12 }}>PDF, TXT, DOCX · max 3 MB</p>
+                  <p style={{ color: "#9CA3AF", fontSize: 12 }}>PDF, TXT, DOCX supported</p>
                 </div>
               )}
             </div>
@@ -244,30 +196,20 @@ export default function Step1({ state, onNext }: Props) {
         )}
 
         <div>
-          <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 10 }}>
-            CEFR Level
-          </label>
+          <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#374151", marginBottom: 10 }}>CEFR Level</label>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {LEVELS.map((l) => {
               const s = LEVEL_STYLES[l];
               const isSelected = level === l;
               return (
-                <button
-                  key={l}
-                  onClick={() => setLevel(l)}
-                  style={{
-                    padding: "7px 18px",
-                    borderRadius: 20,
-                    border: `2px solid ${isSelected ? s.activeBorder : s.border}`,
-                    background: isSelected ? s.bg : "#fff",
-                    color: s.text,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    boxShadow: isSelected ? `0 0 0 2px ${s.border}` : "none",
-                    transition: "all 0.15s",
-                  }}
-                >
+                <button key={l} onClick={() => setLevel(l)} style={{
+                  padding: "7px 18px", borderRadius: 20,
+                  border: `2px solid ${isSelected ? s.activeBorder : s.border}`,
+                  background: isSelected ? s.bg : "#fff", color: s.text,
+                  fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  boxShadow: isSelected ? `0 0 0 2px ${s.border}` : "none",
+                  transition: "all 0.15s",
+                }}>
                   {l}
                 </button>
               );
@@ -275,22 +217,15 @@ export default function Step1({ state, onNext }: Props) {
           </div>
         </div>
 
-        {error && <ErrorMessage message={error} onRetry={handleGenerate} />}
+        {error && <ErrorMessage message={error} onRetry={undefined} />}
 
         <button
           className="btn-primary"
-          disabled={!canGenerate || loading}
+          disabled={!canGenerate || loading || uploading}
           onClick={handleGenerate}
           style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 8, padding: "11px 24px" }}
         >
-          {loading ? (
-            <>
-              <Spinner size={16} />
-              Generating worksheet angles…
-            </>
-          ) : (
-            "Generate Angles"
-          )}
+          {loading ? <><Spinner size={16} />Generating worksheet angles…</> : "Generate Angles"}
         </button>
       </div>
     </div>

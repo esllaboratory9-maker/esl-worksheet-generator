@@ -189,8 +189,7 @@ export default function Step3({ state, onNext, onBack }: Props) {
           level: state.level,
           angles: state.selectedAngles,
           fileContent: state.fileContent,
-          fileBase64: state.fileBase64,
-          fileType: state.fileType,
+          fileId: state.fileId,
         }),
       });
       const data = await res.json();
@@ -213,8 +212,7 @@ export default function Step3({ state, onNext, onBack }: Props) {
           level: state.level,
           angles: state.selectedAngles,
           fileContent: state.fileContent,
-          fileBase64: state.fileBase64,
-          fileType: state.fileType,
+          fileId: state.fileId,
         }),
       });
       const data = await res.json();

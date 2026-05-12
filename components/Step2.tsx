@@ -37,9 +37,7 @@ export default function Step2({ state, onNext, onBack }: Props) {
         level: state.level,
         angles: selected,
         fileContent: state.fileContent,
-        fileBase64: state.fileBase64,
-        fileType: state.fileType,
-        fileName: state.fileName,
+        fileId: state.fileId,
       };
       const res = await fetch("/api/vocabulary", {
         method: "POST",
